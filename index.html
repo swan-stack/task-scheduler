@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📋 Task Scheduler</title>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;color:#222;min-height:100vh}
+.hdr{background:#1e3a5f;color:#fff;padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
+.hdr h1{font-size:1.1em;letter-spacing:-.3px}
+.hdr-right{display:flex;align-items:center;gap:10px;font-size:.85em}
+.wrap{max-width:720px;margin:24px auto;padding:0 16px 60px}
+.card{background:#fff;border-radius:10px;padding:20px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.card-title{font-size:.95em;font-weight:700;color:#1e3a5f;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e8f0fe}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px}
+label{font-size:.78em;color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+input,select{padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:.88em;width:100%}
+input:focus,select:focus{outline:2px solid #1e3a5f;border-color:transparent}
+.btn{padding:8px 18px;border:none;border-radius:6px;font-size:.88em;cursor:pointer;font-weight:600;transition:.15s}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:#1e3a5f;color:#fff}.btn-primary:hover:not(:disabled){background:#162d4a}
+.btn-green{background:#217346;color:#fff}.btn-green:hover:not(:disabled){background:#185c39}
+.btn-red{background:#c53030;color:#fff}.btn-red:hover:not(:disabled){background:#9b2020}
+.btn-ghost{background:transparent;border:1px solid rgba(255,255,255,.6);color:#fff;padding:5px 12px}
+.btn-ghost:hover{background:rgba(255,255,255,.15)}
+.btn-sm{padding:4px 9px;font-size:.78em;white-space:nowrap}
+.btn-full{width:100%;padding:13px;font-size:.95em}
+/* Todo items */
+.todo-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1.5px solid #eee;border-radius:7px;margin-bottom:6px;transition:.15s;cursor:grab;user-select:none}
+.todo-item:hover{border-color:#c0d0e8}
+.todo-item.dragging{opacity:.35;cursor:grabbing;background:#f0f4ff}
+.todo-item.drag-over{border-top:3px solid #1e3a5f;background:#f0f4ff}
+.todo-item.done{opacity:.5}
+.todo-item.done .todo-name{text-decoration:line-through;color:#888}
+.drag-handle{color:#bbb;font-size:1.1em;cursor:grab;flex-shrink:0;padding:0 2px}
+.todo-name{flex:1;font-size:.88em}
+.todo-dur{font-size:.78em;color:#888;background:#f0f0f0;padding:2px 7px;border-radius:4px;white-space:nowrap}
+/* Emails section */
+.email-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.email-row{display:flex;gap:6px;align-items:center}
+.email-row input{flex:1}
+.email-row .email-label{font-size:.75em;color:#666;width:16px;flex-shrink:0;text-align:center;font-weight:700}
+.email-add-btn{font-size:.8em;color:#1e3a5f;background:none;border:1px dashed #c0d0e8;border-radius:6px;padding:6px;cursor:pointer;width:100%;text-align:center;margin-top:4px}
+.email-add-btn:hover{background:#f0f4ff}
+/* Results */
+.slot-item{padding:10px 12px;border-left:4px solid #217346;background:#f0f7f2;border-radius:0 7px 7px 0;margin-bottom:8px}
+.slot-item.err{border-left-color:#c53030;background:#fff5f5}
+.slot-name{font-weight:600;font-size:.9em}
+.slot-time{font-size:.8em;color:#555;margin-top:3px}
+/* Login */
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f0f4f8}
+.login-box{background:#fff;border-radius:14px;padding:44px 36px;text-align:center;box-shadow:0 6px 30px rgba(0,0,0,.12);max-width:380px;width:100%;margin:16px}
+.login-icon{font-size:3.2em;margin-bottom:8px}
+.login-box h1{font-size:1.5em;color:#1e3a5f;margin-bottom:6px}
+.login-box p{font-size:.87em;color:#777;margin-bottom:28px;line-height:1.6}
+.hidden{display:none!important}
+.msg{padding:10px 14px;border-radius:7px;font-size:.87em;margin-top:10px}
+.msg-err{background:#fff5f5;color:#c53030;border:1px solid #fca5a5}
+.msg-ok{background:#f0f7f2;color:#166534;border:1px solid #86efac}
+.msg-info{background:#eff6ff;color:#1e40af;border:1px solid #93c5fd}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.badge{font-size:.75em;background:#dbeafe;color:#1e40af;padding:2px 7px;border-radius:4px}
+.empty-state{text-align:center;color:#bbb;padding:24px;font-size:.87em}
+.section-divider{margin-top:10px;padding:5px 2px;font-size:.75em;color:#999;border-top:1px dashed #e0e0e0}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen" class="login-wrap">
+  <div class="login-box">
+    <div class="login-icon">📋</div>
+    <h1>Task Scheduler</h1>
+    <p>Outlook 일정을 분석해<br>빈 시간에 할일을 자동 배분합니다.</p>
+    <button class="btn btn-primary btn-full" onclick="login()" id="loginBtn">
+      🔐 Microsoft 로그인
+    </button>
+    <div id="loginErr" class="msg msg-err hidden" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="mainScreen" class="hidden">
+  <div class="hdr">
+    <h1>📋 Task Scheduler</h1>
+    <div class="hdr-right">
+      <span id="userEmail" style="opacity:.85"></span>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">로그아웃</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- 설정 -->
+    <div class="card">
+      <div class="card-title">⚙️ 설정</div>
+
+      <!-- 조회 이메일 (최대 4개) -->
+      <div style="margin-bottom:10px">
+        <label style="display:block;margin-bottom:6px">충돌 방지 조회 이메일 (최대 4개) — 로그인 계정 포함</label>
+        <div id="emailInputs">
+          <div class="email-row" id="emailRow0">
+            <span class="email-label">1</span>
+            <input type="email" class="query-email" placeholder="조회할 이메일 주소" id="qEmail0">
+            <button class="btn btn-sm btn-red" onclick="removeEmailRow(0)" style="display:none">✕</button>
+          </div>
+        </div>
+        <button class="email-add-btn" id="addEmailBtn" onclick="addEmailRow()">+ 이메일 추가 (최대 4개)</button>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>시작일</label>
+          <input type="date" id="startDate">
+        </div>
+        <div class="field">
+          <label>배분 일수</label>
+          <select id="spreadDays">
+            <option value="1">1일</option>
+            <option value="2">2일</option>
+            <option value="3">3일</option>
+            <option value="5" selected>5일</option>
+            <option value="7">7일</option>
+            <option value="10">10일</option>
+            <option value="14">14일</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>버퍼 (일정 간격)</label>
+          <select id="bufferMins">
+            <option value="0">없음</option>
+            <option value="10">10분</option>
+            <option value="15" selected>15분</option>
+            <option value="30">30분</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>업무 시작</label>
+          <select id="workStart"></select>
+        </div>
+        <div class="field">
+          <label>업무 종료</label>
+          <select id="workEnd"></select>
+        </div>
+        <div class="field">
+          <label>토요일</label>
+          <select id="inclSat">
+            <option value="0" selected>제외</option>
+            <option value="1">포함</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>일요일</label>
+          <select id="inclSun">
+            <option value="0" selected>제외</option>
+            <option value="1">포함</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>공휴일</label>
+          <select id="inclHol">
+            <option value="0" selected>제외</option>
+            <option value="1">포함</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 할일 목록 -->
+    <div class="card">
+      <div class="card-title">
+        ✅ 할일 목록
+        <span id="todoCount" class="badge" style="font-weight:400;margin-left:6px"></span>
+      </div>
+      <div class="row" style="margin-bottom:12px;align-items:flex-end">
+        <div class="field" style="flex:4">
+          <label>할일 이름</label>
+          <input type="text" id="newName" placeholder="예) 보고서 초안 작성"
+                 onkeydown="if(event.key==='Enter')addTodo()">
+        </div>
+        <div class="field" style="flex:1;min-width:80px">
+          <label>소요 (분)</label>
+          <input type="number" id="newDur" value="30" min="15" max="480" step="15"
+                 onkeydown="if(event.key==='Enter')addTodo()">
+        </div>
+        <div style="flex:0;padding-bottom:1px">
+          <button class="btn btn-primary" onclick="addTodo()">+ 추가</button>
+        </div>
+      </div>
+      <div id="todoList"></div>
+      <div id="todoEmpty" class="empty-state">할일을 추가해주세요 👆</div>
+    </div>
+
+    <!-- 실행 -->
+    <button class="btn btn-green btn-full" id="findBtn" onclick="findSlots()">
+      🔍 빈 시간 찾기
+    </button>
+    <div id="findMsg" class="hidden" style="margin-top:8px"></div>
+
+    <!-- 결과 -->
+    <div id="resultsCard" class="card hidden" style="margin-top:14px">
+      <div class="card-title">📅 배분 미리보기</div>
+      <div id="resultsList"></div>
+      <button class="btn btn-green btn-full hidden" id="createBtn"
+              onclick="createEvents()" style="margin-top:14px">
+        📌 Outlook 캘린더에 등록
+      </button>
+      <div id="createMsg" class="hidden" style="margin-top:8px"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const CLIENT_ID = "67cf5516-aee1-4db9-b232-fccb0b87ff94";
+const TENANT_ID = "277c521d-14bc-4915-ae98-e465db3e265f";
+const SCOPES    = ["User.Read","Calendars.ReadWrite","Calendars.Read.Shared","MailboxSettings.Read"];
+const CURRENT_URL = location.href.split(/[?#]/)[0];
+
+// ── 이메일 입력 행 관리 ───────────────────────────────────────
+let emailRowCount = 1;
+
+function addEmailRow() {
+  if (emailRowCount >= 4) { alert("최대 4개까지 입력 가능합니다."); return; }
+  const idx = emailRowCount;
+  const div = document.createElement("div");
+  div.className = "email-row";
+  div.id = `emailRow${idx}`;
+  div.innerHTML = `
+    <span class="email-label">${idx+1}</span>
+    <input type="email" class="query-email" placeholder="조회할 이메일 주소" id="qEmail${idx}">
+    <button class="btn btn-sm btn-red" onclick="removeEmailRow(${idx})">✕</button>`;
+  id("emailInputs").appendChild(div);
+  emailRowCount++;
+  if (emailRowCount >= 4) id("addEmailBtn").style.display = "none";
+  saveEmails();
+}
+
+function removeEmailRow(idx) {
+  const row = id(`emailRow${idx}`);
+  if (row) row.remove();
+  if (emailRowCount >= 4) {
+    id("addEmailBtn").style.display = "";
+    emailRowCount = document.querySelectorAll(".query-email").length;
+  } else {
+    emailRowCount = document.querySelectorAll(".query-email").length;
+  }
+  if (emailRowCount < 4) id("addEmailBtn").style.display = "";
+  saveEmails();
+}
+
+function getQueryEmails() {
+  return Array.from(document.querySelectorAll(".query-email"))
+    .map(el => el.value.trim())
+    .filter(Boolean);
+}
+
+function saveEmails() {
+  localStorage.setItem("ts_queryEmails", JSON.stringify(getQueryEmails()));
+}
+
+function restoreEmails(saved) {
+  if (!saved || !saved.length) return;
+  const inputs = document.querySelectorAll(".query-email");
+  // 첫 번째 인풋
+  if (inputs[0]) inputs[0].value = saved[0];
+  for (let i = 1; i < saved.length && i < 4; i++) {
+    addEmailRow();
+    const inp = id(`qEmail${i}`);
+    if (inp) inp.value = saved[i];
+  }
+}
+
+// 시간 선택 생성
+function buildHourOptions() {
+  const startSel = id("workStart"), endSel = id("workEnd");
+  for (let h = 0; h < 24; h++) {
+    const label = `${String(h).padStart(2,"0")}:00`;
+    startSel.innerHTML += `<option value="${h}"${h===9?" selected":""}>${label}</option>`;
+    endSel.innerHTML   += `<option value="${h}"${h===18?" selected":""}>${label}</option>`;
+  }
+}
+
+// ── MSAL ─────────────────────────────────────────────────────
+let msalInst = null, userAccount = null;
+
+async function getMsal() {
+  if (msalInst) return msalInst;
+  msalInst = new msal.PublicClientApplication({
+    auth: { clientId: CLIENT_ID, authority: `https://login.microsoftonline.com/${TENANT_ID}`, redirectUri: CURRENT_URL },
+    cache: { cacheLocation: "sessionStorage" }
+  });
+  await msalInst.initialize();
+  const rr = await msalInst.handleRedirectPromise();
+  if (rr?.account) { userAccount = rr.account; showMain(rr.account.username); }
+  else {
+    const accs = msalInst.getAllAccounts();
+    if (accs.length) { userAccount = accs[0]; showMain(accs[0].username); }
+  }
+  return msalInst;
+}
+
+async function login() {
+  const btn = id("loginBtn");
+  btn.innerHTML = '<span class="spinner"></span>로그인 중...'; btn.disabled = true;
+  try { const inst = await getMsal(); await inst.loginRedirect({ scopes: SCOPES }); }
+  catch(e) { showEl("loginErr", e.message||"로그인 실패"); btn.innerHTML="🔐 Microsoft 로그인"; btn.disabled=false; }
+}
+
+async function logout() { (await getMsal()).logoutRedirect(); }
+
+async function getToken() {
+  const inst = await getMsal();
+  const accs = inst.getAllAccounts();
+  if (!accs.length) throw new Error("로그인이 필요합니다.");
+  try { return (await inst.acquireTokenSilent({ scopes: SCOPES, account: accs[0] })).accessToken; }
+  catch { await inst.acquireTokenRedirect({ scopes: SCOPES, account: accs[0] }); return null; }
+}
+
+// ── Graph API ─────────────────────────────────────────────────
+async function graphPost(token, path, body) {
+  const r = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    method:"POST", headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"}, body:JSON.stringify(body)
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error?.message||JSON.stringify(d));
+  return d;
+}
+
+async function graphGet(token, path) {
+  const r = await fetch(`https://graph.microsoft.com/v1.0${path}`, { headers:{Authorization:`Bearer ${token}`} });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error?.message||JSON.stringify(d));
+  return d;
+}
+
+async function getSchedule(token, emails, startKST, endKST) {
+  const toUtc = s => new Date(s+"+09:00").toISOString().replace(".000Z","");
+  return graphPost(token, "/me/calendar/getSchedule", {
+    schedules: emails,
+    startTime: { dateTime: toUtc(startKST), timeZone: "UTC" },
+    endTime:   { dateTime: toUtc(endKST),   timeZone: "UTC" },
+    availabilityViewInterval: 15
+  });
+}
+
+// 공휴일: Outlook 공휴일 캘린더에서 가져오기
+async function getHolidayDates(token, startDate, endDate) {
+  try {
+    // 한국 공휴일 캘린더 검색
+    const cals = await graphGet(token, "/me/calendars");
+    const holCal = (cals.value||[]).find(c =>
+      c.name.includes("대한민국") || c.name.includes("Korea") || c.name.includes("Holiday") || c.name.includes("공휴일")
+    );
+    if (!holCal) return [];
+    const events = await graphGet(token,
+      `/me/calendars/${holCal.id}/calendarView?startDateTime=${startDate}T00:00:00Z&endDateTime=${endDate}T23:59:59Z&$select=start,end`
+    );
+    return (events.value||[]).map(e => e.start.dateTime.substring(0,10));
+  } catch { return []; }
+}
+
+async function createCalEvent(token, subject, startKST, endKST) {
+  // 로그인한 계정 캘린더에 직접 등록
+  return graphPost(token, "/me/events", {
+    subject,
+    start: { dateTime: startKST, timeZone: "Korea Standard Time" },
+    end:   { dateTime: endKST,   timeZone: "Korea Standard Time" }
+  });
+}
+
+// ── 시간 헬퍼 ─────────────────────────────────────────────────
+function kstToMs(s) {
+  const c = s.split(".")[0];
+  if (c.endsWith("Z")||c.includes("+")) return new Date(c).getTime();
+  return new Date(c+"Z").getTime();
+}
+function dateHourToMs(d, h, m=0) {
+  return new Date(`${d}T${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:00+09:00`).getTime();
+}
+function msToKSTiso(ts) {
+  const d = new Date(ts+9*3600000), p=n=>String(n).padStart(2,"0");
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth()+1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:00`;
+}
+function msToDisplay(ts) {
+  return new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",month:"numeric",day:"numeric",weekday:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(ts));
+}
+
+// ── 스케줄링 ──────────────────────────────────────────────────
+function buildSchedule(todos, scheduleData, cfg) {
+  const { startDate, spreadDays, workStart, workEnd, inclSat, inclSun, bufferMins, localBusy=[], holidayDates=[] } = cfg;
+  const bufMs = bufferMins * 60000;
+
+  // 1. busy 블록 수집
+  const busy = [];
+  for (const person of (scheduleData.value||[])) {
+    for (const item of (person.scheduleItems||[])) {
+      if (["busy","tentative","oof","workingElsewhere"].includes(item.status)) {
+        busy.push({ s: kstToMs(item.start.dateTime), e: kstToMs(item.end.dateTime) });
+      }
+    }
+  }
+  for (const lb of localBusy) busy.push({ s: lb.s, e: lb.e });
+  busy.sort((a,b)=>a.s-b.s);
+
+  // 2. 버퍼 적용 후 merge
+  const buffered = busy.map(b=>({ s: b.s-bufMs, e: b.e+bufMs }));
+  buffered.sort((a,b)=>a.s-b.s);
+  const merged = [];
+  for (const b of buffered) {
+    if (!merged.length || b.s >= merged[merged.length-1].e) merged.push({s:b.s,e:b.e});
+    else merged[merged.length-1].e = Math.max(merged[merged.length-1].e, b.e);
+  }
+
+  // 3. 빈 슬롯 계산 (공휴일 제외 포함)
+  const freeSlots = [];
+  const [sy,sm,sd] = startDate.split("-").map(Number);
+  let checked=0, found=0;
+  while (found < spreadDays && checked < spreadDays+21) {
+    const dt = new Date(sy, sm-1, sd+checked);
+    const dow = dt.getDay();
+    const dateStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+    checked++;
+    if (dow===6 && !inclSat) continue;
+    if (dow===0 && !inclSun) continue;
+    if (holidayDates.includes(dateStr)) continue; // 공휴일 제외
+    found++;
+
+    const dayS = dateHourToMs(dateStr, workStart);
+    const dayE = dateHourToMs(dateStr, workEnd);
+    let cur = dayS;
+    for (const b of merged) {
+      if (b.e<=cur || b.s>=dayE) continue;
+      if (b.s>cur) freeSlots.push({s:cur, e:Math.min(b.s,dayE)});
+      cur = Math.max(cur, Math.min(b.e,dayE));
+    }
+    if (cur<dayE) freeSlots.push({s:cur, e:dayE});
+  }
+
+  // 4. 할일 배분 — 버퍼를 슬롯 간에도 적용
+  const pending = todos.filter(t=>!t.done);
+  const ptrs = freeSlots.map(sl=>sl.s);
+  const result = [];
+  for (const todo of pending) {
+    const durMs = todo.dur*60000;
+    let placed = false;
+    for (let i=0; i<freeSlots.length; i++) {
+      // 슬롯 내에서 현재 포인터 이후 여유 공간 확인
+      if (freeSlots[i].e - ptrs[i] >= durMs) {
+        result.push({ todo, s: ptrs[i], e: ptrs[i]+durMs });
+        // 다음 할일은 버퍼 후에 배치
+        ptrs[i] += durMs + bufMs;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) result.push({ todo, s:null, e:null });
+  }
+  return result;
+}
+
+// ── Todo 상태 ─────────────────────────────────────────────────
+let todos = JSON.parse(localStorage.getItem("ts_todos")||"[]");
+let assignments = [];
+let localBusy = [];
+
+function saveTodos() { localStorage.setItem("ts_todos", JSON.stringify(todos)); }
+
+function renderTodos() {
+  const list=id("todoList"), empty=id("todoEmpty");
+  const pCount=todos.filter(t=>!t.done).length, dCount=todos.filter(t=>t.done).length;
+  id("todoCount").textContent=`미완료 ${pCount}개 / 완료 ${dCount}개`;
+  if (!todos.length) { list.innerHTML=""; show(empty); return; }
+  hide(empty);
+
+  const renderItem = t => `
+    <div class="todo-item${t.done?" done":""}" id="ti-${t.id}" draggable="true"
+      ondragstart="dragStart(event,'${t.id}')" ondragover="dragOver(event)"
+      ondrop="dropOn(event,'${t.id}')" ondragend="dragEnd(event)" ondragleave="dragLeave(event)">
+      <span class="drag-handle" title="드래그로 순서 변경">⠿</span>
+      <span class="todo-name">${esc(t.name)}</span>
+      <span class="todo-dur">${t.dur}분</span>
+      <button class="btn btn-sm ${t.done?"btn-primary":"btn-green"}" onclick="toggleDone('${t.id}')" style="min-width:58px">
+        ${t.done?"↩ 재등록":"✓ Done"}
+      </button>
+      <button class="btn btn-sm btn-red" onclick="removeTodo('${t.id}')">✕</button>
+    </div>`;
+
+  const pending = todos.filter(t=>!t.done);
+  const done    = todos.filter(t=>t.done);
+  let out = pending.map(renderItem).join("");
+  if (done.length) {
+    out += `<div class="section-divider">✅ 완료된 항목</div>`;
+    out += done.map(renderItem).join("");
+  }
+  list.innerHTML = out;
+}
+
+function addTodo() {
+  const name=id("newName").value.trim(), dur=parseInt(id("newDur").value,10);
+  if (!name){id("newName").focus();return;}
+  if (!dur||dur<1){id("newDur").focus();return;}
+  todos.push({id:Date.now().toString(36), name, dur, done:false});
+  saveTodos(); renderTodos();
+  id("newName").value=""; id("newName").focus();
+}
+
+function removeTodo(tid) { todos=todos.filter(t=>t.id!==tid); saveTodos(); renderTodos(); }
+
+function toggleDone(tid) {
+  const t=todos.find(t=>t.id===tid); if(!t) return;
+  if (t.done) {
+    t.done=false; t.reRegister=true;
+    const prev=assignments.find(a=>a.todo.id===tid);
+    if (prev?.s) localBusy=localBusy.filter(b=>Math.abs(b.s-prev.s)>60000);
+    assignments=assignments.filter(a=>a.todo.id!==tid);
+  } else { t.done=true; }
+  saveTodos(); renderTodos();
+}
+
+// ── 드래그 앤 드롭 ───────────────────────────────────────────
+let dragId=null;
+function dragStart(e,tid) {
+  dragId=tid;
+  setTimeout(()=>id(`ti-${tid}`)?.classList.add("dragging"),0);
+}
+function dragEnd(e) {
+  document.querySelectorAll(".todo-item").forEach(el=>el.classList.remove("dragging","drag-over"));
+  dragId=null;
+}
+function dragOver(e) { e.preventDefault(); e.target.closest(".todo-item")?.classList.add("drag-over"); }
+function dragLeave(e) { e.target.closest(".todo-item")?.classList.remove("drag-over"); }
+function dropOn(e,targetId) {
+  e.preventDefault();
+  document.querySelectorAll(".todo-item").forEach(el=>el.classList.remove("drag-over"));
+  if (!dragId||dragId===targetId) return;
+  const fi=todos.findIndex(t=>t.id===dragId), ti=todos.findIndex(t=>t.id===targetId);
+  if (fi<0||ti<0) return;
+  const [moved]=todos.splice(fi,1); todos.splice(ti,0,moved);
+  saveTodos(); renderTodos();
+}
+
+// ── 빈 시간 찾기 ─────────────────────────────────────────────
+async function findSlots() {
+  const emails = getQueryEmails();
+  if (!emails.length) { alert("조회할 이메일을 하나 이상 입력해주세요."); return; }
+  if (!todos.filter(t=>!t.done).length) { alert("미완료 할일이 없습니다."); return; }
+  saveEmails();
+
+  const btn=id("findBtn");
+  btn.innerHTML='<span class="spinner"></span>일정 조회 중...'; btn.disabled=true;
+  hide("findMsg"); hide("resultsCard");
+
+  try {
+    const token     = await getToken();
+    const startDate = id("startDate").value;
+    const days      = parseInt(id("spreadDays").value,10);
+    const workStart = parseInt(id("workStart").value,10);
+    const workEnd   = parseInt(id("workEnd").value,10);
+    const bufMins   = parseInt(id("bufferMins").value,10);
+    const inclSat   = !!parseInt(id("inclSat").value,10);
+    const inclSun   = !!parseInt(id("inclSun").value,10);
+    const exclHol   = !parseInt(id("inclHol").value,10); // 공휴일 제외 여부
+
+    const [sy,sm,sd] = startDate.split("-").map(Number);
+    const endDateObj = new Date(sy,sm-1,sd+days+14);
+    const endDateStr = `${endDateObj.getFullYear()}-${String(endDateObj.getMonth()+1).padStart(2,"0")}-${String(endDateObj.getDate()).padStart(2,"0")}`;
+
+    // 공휴일 조회 (제외 설정 시)
+    let holidayDates = [];
+    if (exclHol) {
+      holidayDates = await getHolidayDates(token, startDate, endDateStr);
+    }
+
+    // 일정 조회 (입력된 이메일 모두)
+    const schedData = await getSchedule(token, [...new Set(emails)], startDate+"T00:00:00", endDateStr+"T23:59:00");
+
+    assignments = buildSchedule(todos, schedData, {
+      startDate, spreadDays:days, workStart, workEnd,
+      inclSat, inclSun, bufferMins:bufMins,
+      localBusy, holidayDates
+    });
+
+    renderResults();
+    show("resultsCard"); show("createBtn");
+    const ok=assignments.filter(a=>a.s).length, ng=assignments.filter(a=>!a.s).length;
+    showEl("findMsg",`✅ 조회 완료 — ${ok}개 배분, ${ng}개 미배분`,"ok");
+  } catch(e) {
+    showEl("findMsg","❌ 오류: "+e.message,"err");
+  } finally {
+    btn.innerHTML="🔍 빈 시간 찾기"; btn.disabled=false;
+  }
+}
+
+function renderResults() {
+  let html="";
+  for (const a of assignments) {
+    if (a.s) {
+      html+=`<div class="slot-item">
+        <div class="slot-name">📌 ${esc(a.todo.name)}</div>
+        <div class="slot-time">🕐 ${msToDisplay(a.s)} → ${msToDisplay(a.e)} (${a.todo.dur}분)</div>
+      </div>`;
+    } else {
+      html+=`<div class="slot-item err">
+        <div class="slot-name">⚠️ ${esc(a.todo.name)}</div>
+        <div class="slot-time">배분 기간 내 빈 시간 부족 — 일수를 늘려주세요</div>
+      </div>`;
+    }
+  }
+  id("resultsList").innerHTML=html||'<div class="empty-state">배분할 항목이 없습니다</div>';
+  assignments.filter(a=>a.s).length ? show("createBtn") : hide("createBtn");
+}
+
+// ── Outlook 등록 ─────────────────────────────────────────────
+async function createEvents() {
+  const scheduled=assignments.filter(a=>a.s);
+  if (!scheduled.length) return;
+  const btn=id("createBtn");
+  btn.innerHTML='<span class="spinner"></span>등록 중...'; btn.disabled=true; hide("createMsg");
+  try {
+    const token=await getToken();
+    let ok=0, fail=0;
+    for (const a of scheduled) {
+      try {
+        const subj = a.todo.reRegister ? a.todo.name+" (재등록)" : a.todo.name;
+        await createCalEvent(token, subj, msToKSTiso(a.s), msToKSTiso(a.e));
+        localBusy.push({s:a.s, e:a.e});
+        ok++;
+      } catch { fail++; }
+    }
+    showEl("createMsg",`✅ ${ok}개 등록 완료!`+(fail?` (${fail}개 실패)`:"")+"\n로그인 계정 캘린더에 등록되었습니다.","ok");
+    btn.innerHTML="📌 Outlook 캘린더에 등록"; btn.disabled=false;
+    hide("createBtn"); hide("resultsCard"); hide("findMsg");
+    assignments=[]; renderTodos();
+  } catch(e) {
+    showEl("createMsg","❌ "+e.message,"err");
+    btn.innerHTML="📌 Outlook 캘린더에 등록"; btn.disabled=false;
+  }
+}
+
+// ── UI 헬퍼 ──────────────────────────────────────────────────
+function id(x){return document.getElementById(x);}
+function show(x){(typeof x==="string"?id(x):x)?.classList.remove("hidden");}
+function hide(x){(typeof x==="string"?id(x):x)?.classList.add("hidden");}
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function showEl(elId,msg,type="err"){const el=id(elId);el.className=`msg msg-${type}`;el.textContent=msg;show(el);}
+
+function showMain(email) {
+  hide("loginScreen"); show("mainScreen");
+  id("userEmail").textContent = email;
+  // 저장된 이메일 복원
+  const saved = JSON.parse(localStorage.getItem("ts_queryEmails")||"[]");
+  restoreEmails(saved);
+  // 시작일 기본값 (내일)
+  const tom=new Date(); tom.setDate(tom.getDate()+1);
+  id("startDate").value=tom.toLocaleDateString("fr-CA");
+  renderTodos();
+}
+
+// ── 초기화 ───────────────────────────────────────────────────
+buildHourOptions();
+
+(async function init() {
+  if (location.protocol==="file:") {
+    id("loginErr").textContent="⚠️ 파일을 직접 열면 로그인이 불가합니다. GitHub Pages 또는 SharePoint URL로 접속해주세요.";
+    show("loginErr"); id("loginBtn").disabled=true; return;
+  }
+  try {
+    const inst=await getMsal();
+    const accs=inst.getAllAccounts();
+    if (accs.length){userAccount=accs[0];showMain(accs[0].username);}
+  } catch(e){id("loginErr").textContent="초기화 오류: "+e.message;show("loginErr");}
+})();
+</script>
+</body>
+</html>
